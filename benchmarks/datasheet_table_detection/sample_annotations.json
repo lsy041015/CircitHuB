@@ -1,0 +1,12 @@
+{
+  "pdf": "samples/synthetic_lm358.pdf",
+  "pages": [
+    {
+      "page": 3,
+      "regions": [
+        {"kind": "electrical_characteristics", "box": [50, 80, 420, 180]},
+        {"kind": "pin_map", "box": [80, 80, 140, 100]}
+      ]
+    }
+  ]
+}
