@@ -1,0 +1,9 @@
+{
+  "filter": "original",
+  "zoom": "Fit Width",
+  "rotation": 0,
+  "ocr_lang": "eng",
+  "ocr_timeout": 8,
+  "auto_gemma_rank": false,
+  "question_scope": "full"
+}

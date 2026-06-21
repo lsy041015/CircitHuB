@@ -1,0 +1,204 @@
+{
+  "summary": {
+    "ok": 39,
+    "total": 39,
+    "failed": []
+  },
+  "checks": [
+    {
+      "name": "PDF 로딩",
+      "ok": true,
+      "detail": "pages=4, label=1 / 4"
+    },
+    {
+      "name": "OCR 상태",
+      "ok": true,
+      "detail": "{'python_package': True, 'binary': '/usr/bin/tesseract', 'version': '4.1.1', 'lang': 'eng', 'timeout': 8, 'ready': True}"
+    },
+    {
+      "name": "초기 pixmap 표시",
+      "ok": true,
+      "detail": "pixmap exists"
+    },
+    {
+      "name": "툴바 텍스트 흰색 스타일",
+      "ok": true,
+      "detail": "toolbar stylesheet"
+    },
+    {
+      "name": "화면 캡처 01_initial_loaded",
+      "ok": true,
+      "detail": "01_initial_loaded.png, shape=(920, 980, 3)"
+    },
+    {
+      "name": "다음 페이지 이동",
+      "ok": true,
+      "detail": "2 / 4"
+    },
+    {
+      "name": "이전 페이지 이동",
+      "ok": true,
+      "detail": "1 / 4"
+    },
+    {
+      "name": "필터 original",
+      "ok": true,
+      "detail": "filter=original"
+    },
+    {
+      "name": "필터 contrast",
+      "ok": true,
+      "detail": "filter=contrast"
+    },
+    {
+      "name": "필터 binarize",
+      "ok": true,
+      "detail": "filter=binarize"
+    },
+    {
+      "name": "필터 sharpen",
+      "ok": true,
+      "detail": "filter=sharpen"
+    },
+    {
+      "name": "필터 deskew",
+      "ok": true,
+      "detail": "filter=deskew"
+    },
+    {
+      "name": "필터 auto",
+      "ok": true,
+      "detail": "filter=auto"
+    },
+    {
+      "name": "프리셋 scan 적용",
+      "ok": true,
+      "detail": "binarize"
+    },
+    {
+      "name": "필터 수동 변경 Custom",
+      "ok": true,
+      "detail": "custom"
+    },
+    {
+      "name": "Balanced 재적용",
+      "ok": true,
+      "detail": "original"
+    },
+    {
+      "name": "검색 강조 생성",
+      "ok": true,
+      "detail": "hits=1, page=3"
+    },
+    {
+      "name": "화면 캡처 02_search_overlay",
+      "ok": true,
+      "detail": "02_search_overlay.png, shape=(920, 980, 3)"
+    },
+    {
+      "name": "표 감지 후보 생성",
+      "ok": true,
+      "detail": "regions=[(93, 167, 751, 315), (84, 60, 472, 24)], ratios=[0.329, 0.016]"
+    },
+    {
+      "name": "표 후보가 페이지 전체 아님",
+      "ok": true,
+      "detail": "ratios=[0.329, 0.016]"
+    },
+    {
+      "name": "후보 패널 표시",
+      "ok": true,
+      "detail": "hidden=False, count=2"
+    },
+    {
+      "name": "후보 미리보기 텍스트",
+      "ok": true,
+      "detail": "Parameter Min Typ Max\nSupply Voltage 2.7V 5.0V 5.5V\nInput Current 0.1mA 0.5mA 1.2mA\nTemperature -40C 25C 85C"
+    },
+    {
+      "name": "화면 캡처 03_table_detection_overlay",
+      "ok": true,
+      "detail": "03_table_detection_overlay.png, shape=(920, 980, 3)"
+    },
+    {
+      "name": "영역 PNG 저장 파일 생성",
+      "ok": true,
+      "detail": "size=41646"
+    },
+    {
+      "name": "영역 PNG가 전체 페이지보다 작음",
+      "ok": true,
+      "detail": "region=(315, 751, 3), raw=(750, 959, 3)"
+    },
+    {
+      "name": "페이지 PNG 저장 파일 생성",
+      "ok": true,
+      "detail": "size=52172"
+    },
+    {
+      "name": "감지 영역 오버레이 끄기",
+      "ok": true,
+      "detail": "show=False"
+    },
+    {
+      "name": "영역 라벨 끄기",
+      "ok": true,
+      "detail": "show=False"
+    },
+    {
+      "name": "오탐 제거",
+      "ok": true,
+      "detail": "before=2, after=1"
+    },
+    {
+      "name": "오탐 복구",
+      "ok": true,
+      "detail": "count=2"
+    },
+    {
+      "name": "수동 영역 추가",
+      "ok": true,
+      "detail": "count=3"
+    },
+    {
+      "name": "핀맵 찾기",
+      "ok": true,
+      "detail": "page=2, regions=[(108, 203, 694, 317), (90, 65, 235, 30)]"
+    },
+    {
+      "name": "화면 캡처 04_pinmap_detection_overlay",
+      "ok": true,
+      "detail": "04_pinmap_detection_overlay.png, shape=(920, 980, 3)"
+    },
+    {
+      "name": "선 없는 표 감지",
+      "ok": true,
+      "detail": "regions=[(70, 10, 995, 478)]"
+    },
+    {
+      "name": "선 없는 표 텍스트 추출",
+      "ok": true,
+      "detail": "ELECTRICAL CHARACTERISTICS\nParameter Min Typ Max Unit\nSupply Voltage 2.7 5.0 5.5 V\nInput Current 0.1 0.5 1.2 mA\nOutput S"
+    },
+    {
+      "name": "AI 전체 범위 질문 컨텍스트",
+      "ok": true,
+      "detail": "[Matched page 1] ABSOLUTE MAXIMUM RATINGS Parameter Min Typ Max Supply Voltage 2.7V 5.0V 5.5V Input Current 0.1mA 0.5mA 1.2mA Temperature -40C 25C 85C  [Matched page 3] ELECTRICAL CHARACTERISTICS Parameter Min Typ Max Un"
+    },
+    {
+      "name": "AI 선택 범위 질문 컨텍스트",
+      "ok": true,
+      "detail": "[Selected region, page 2] IN OUT IN OUT IN OUT IN OUT IN OUT  [Current page 2] Pin Configuration IN OUT IN OUT IN OUT IN OUT IN OUT"
+    },
+    {
+      "name": "AI 채팅 수식 텍스트 표시",
+      "ok": true,
+      "detail": "[Gemma]\nP = V × I\nθJA ≤ 100°C/W"
+    },
+    {
+      "name": "본문 페이지 과감지 억제",
+      "ok": true,
+      "detail": "regions=[]"
+    }
+  ]
+}

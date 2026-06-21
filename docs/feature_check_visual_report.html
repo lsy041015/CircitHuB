@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DigiKey Scraper 기능 확인 리포트</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --panel: #151926;
+      --panel2: #1e2130;
+      --line: #2d3149;
+      --text: #ffffff;
+      --muted: #b8c0d6;
+      --green: #22c55e;
+      --blue: #3b68f1;
+      --cyan: #06b6d4;
+      --yellow: #f59e0b;
+      --red: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Malgun Gothic", "Segoe UI", Arial, sans-serif;
+      line-height: 1.5;
+    }
+    .wrap {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 40px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-end;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+      text-align: right;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 18px 0;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      min-height: 110px;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--green);
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .big {
+      display: block;
+      margin-top: 8px;
+      font-size: 24px;
+      font-weight: 800;
+    }
+    .small { color: var(--muted); font-size: 12px; }
+    .section {
+      margin-top: 18px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+    }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      gap: 10px;
+      align-items: stretch;
+    }
+    .step {
+      position: relative;
+      min-height: 122px;
+      padding: 12px;
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .step:not(:last-child)::after {
+      content: ">";
+      position: absolute;
+      right: -10px;
+      top: 44px;
+      color: var(--muted);
+      font-weight: 800;
+    }
+    .step b {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+    .step span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .matrix {
+      display: grid;
+      grid-template-columns: 1.3fr .7fr 2fr;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .matrix div {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      font-size: 13px;
+    }
+    .matrix div:nth-child(3n) { border-right: 0; }
+    .matrix div:nth-last-child(-n + 3) { border-bottom: 0; }
+    .head {
+      background: var(--panel2);
+      color: var(--text);
+      font-weight: 700;
+    }
+    .ok { color: var(--green); font-weight: 700; }
+    .warn { color: var(--yellow); font-weight: 700; }
+    .diagram {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 16px;
+    }
+    .viewer {
+      background: #f7f7f2;
+      color: #111827;
+      border-radius: 8px;
+      min-height: 330px;
+      padding: 18px;
+      position: relative;
+      overflow: hidden;
+    }
+    .paper-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: #374151;
+      margin-bottom: 20px;
+    }
+    .table-box, .pin-box, .search-box {
+      position: absolute;
+      border: 4px solid var(--green);
+      background: rgba(34, 197, 94, .08);
+    }
+    .table-box { left: 58px; top: 94px; width: 58%; height: 114px; }
+    .pin-box { right: 52px; bottom: 44px; width: 180px; height: 102px; border-color: var(--cyan); background: rgba(6, 182, 212, .08); }
+    .search-box { left: 92px; top: 138px; width: 120px; height: 22px; border-color: #ff7a00; background: rgba(255, 122, 0, .08); }
+    .label {
+      position: absolute;
+      background: #141824;
+      color: #fff;
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .label.one { left: 64px; top: 66px; }
+    .label.two { right: 86px; bottom: 152px; }
+    .rows {
+      position: absolute;
+      left: 78px;
+      top: 116px;
+      width: 48%;
+      display: grid;
+      gap: 14px;
+    }
+    .rowline { height: 2px; background: #9ca3af; }
+    .side {
+      display: grid;
+      gap: 10px;
+    }
+    .candidate {
+      border: 1px solid var(--line);
+      background: var(--panel2);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .candidate b { display: block; }
+    .candidate span { color: var(--muted); font-size: 12px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      border: 1px solid var(--line);
+      background: var(--panel2);
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: var(--text);
+      font-size: 12px;
+    }
+    @media (max-width: 920px) {
+      .grid, .flow, .diagram { grid-template-columns: 1fr; }
+      .step::after { display: none; }
+      header { display: block; }
+      .meta { text-align: left; margin-top: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <div>
+        <h1>DigiKey Scraper 기능 확인 리포트</h1>
+        <div class="small">검색, 데이터시트 뷰어, OpenCV 감지, OCR, Gemma AI 기능 상태 요약</div>
+      </div>
+      <div class="meta">생성일: 2026-05-31<br>작업 경로: /home/wego/pj_ws</div>
+    </header>
+
+    <section class="grid" aria-label="검증 요약">
+      <div class="card">
+        <div class="status"><i class="dot"></i>테스트</div>
+        <span class="big">133 OK</span>
+        <span class="small">unittest 전체 통과</span>
+      </div>
+      <div class="card">
+        <div class="status"><i class="dot"></i>OCR</div>
+        <span class="big">켜짐</span>
+        <span class="small">Tesseract 4.1.1 / /usr/bin/tesseract</span>
+      </div>
+      <div class="card">
+        <div class="status"><i class="dot"></i>정적 검사</div>
+        <span class="big">통과</span>
+        <span class="small">ruff / mypy 통과</span>
+      </div>
+      <div class="card">
+        <div class="status"><i class="dot"></i>UI 변경</div>
+        <span class="big">적용</span>
+        <span class="small">AI, 오버레이, 데이터시트 텍스트 흰색</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>주요 기능 흐름</h2>
+      <div class="flow">
+        <div class="step"><b>1. 부품 검색</b><span>DigiKey 페이지에서 제품명, 부품번호, 가격, 스펙 추출</span></div>
+        <div class="step"><b>2. 결과 표시</b><span>카드 UI, 텍스트 출력, 즐겨찾기, 자동 저장</span></div>
+        <div class="step"><b>3. 데이터시트 열기</b><span>PDF 렌더링, 검색 강조, 확대/회전/필터</span></div>
+        <div class="step"><b>4. 영역 감지</b><span>OpenCV/PDF 텍스트/OCR로 표, 핀맵, 정격 영역 후보 생성</span></div>
+        <div class="step"><b>5. 시각 표시</b><span>박스 오버레이, 흰색 라벨, 후보 패널, 선택/저장</span></div>
+        <div class="step"><b>6. AI 분석</b><span>Gemma 질의응답, 후보 검증, 요약 카드 생성</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>데이터시트 감지 화면 예시</h2>
+      <div class="diagram">
+        <div class="viewer">
+          <div class="paper-title">ABSOLUTE MAXIMUM RATINGS / PIN CONFIGURATION</div>
+          <div class="table-box"></div>
+          <div class="pin-box"></div>
+          <div class="search-box"></div>
+          <div class="label one">#1 1.0</div>
+          <div class="label two">#2 0.8</div>
+          <div class="rows">
+            <div class="rowline"></div>
+            <div class="rowline"></div>
+            <div class="rowline"></div>
+            <div class="rowline"></div>
+          </div>
+        </div>
+        <div class="side">
+          <div class="candidate"><b>#1 전기적 특성표</b><span>OpenCV 선/텍스트 기반 감지, PDF 텍스트 보정</span></div>
+          <div class="candidate"><b>#2 핀맵 후보</b><span>Pin Configuration 키워드와 도형 배치 기반 감지</span></div>
+          <div class="candidate"><b>검색 강조</b><span>데이터시트 텍스트 검색 결과를 주황색 박스로 표시</span></div>
+          <div class="candidate"><b>AI 검증</b><span>Gemma가 후보를 표/핀맵/오탐으로 재정렬</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>기능별 상태</h2>
+      <div class="matrix">
+        <div class="head">기능</div><div class="head">상태</div><div class="head">확인 내용</div>
+        <div>DigiKey 스크래핑 파서</div><div class="ok">정상</div><div>HTML 파싱, 부품번호, 데이터시트 URL, 스펙 추출 테스트 통과</div>
+        <div>결과 저장/공유</div><div class="ok">정상</div><div>텍스트 포맷, 파일명 정규화, TCP 수신, 저장 충돌 회피 테스트 통과</div>
+        <div>데이터시트 뷰어</div><div class="ok">정상</div><div>PDF 렌더링, 검색, 페이지 표시, 필터, 저장 경로 테스트 통과</div>
+        <div>OpenCV 감지</div><div class="ok">정상</div><div>선 표, 선 없는 표, 핀맵 후보 감지 및 오버레이 테스트 통과</div>
+        <div>OCR fallback</div><div class="ok">정상</div><div>pytesseract 설치, Tesseract 4.1.1 인식, 앱 상태 OCR 켜짐</div>
+        <div>Gemma AI</div><div class="ok">정상</div><div>키 로딩, 프롬프트 생성, 후보 랭킹, 요약/수식 보존 테스트 통과</div>
+        <div>실제 외부 호출</div><div class="warn">환경 의존</div><div>DigiKey 네트워크, ChromeDriver, Gemma API 키/네트워크에 따라 결과 달라짐</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>사용자 관점 개선 우선순위</h2>
+      <div class="chips">
+        <span class="chip">실제 제조사 PDF 벤치마크 추가</span>
+        <span class="chip">AI 키 상태 안내 강화</span>
+        <span class="chip">오탐 즉시 숨김/복구</span>
+        <span class="chip">감지 후보 타입 라벨 표시</span>
+        <span class="chip">검색 실패 원인 세분화</span>
+        <span class="chip">첫 실행 환경 체크리스트</span>
+        <span class="chip">저장 후 파일 위치 열기</span>
+        <span class="chip">OCR 언어 선택 UI</span>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
