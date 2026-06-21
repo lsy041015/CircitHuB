@@ -1,0 +1,9 @@
+-r requirements.txt
+pytest>=8.0
+pytest-cov>=5.0
+ruff>=0.6
+mypy>=1.10
+pip-audit>=2.7
+# Optional persistence backend (Postgres). App falls back to JSON if absent.
+SQLAlchemy>=2.0
+psycopg2-binary>=2.9

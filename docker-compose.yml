@@ -1,0 +1,23 @@
+# Optional local Postgres for the search-history repository.
+# The app runs fine WITHOUT this (it falls back to JSON files). To enable the
+# DB backend: `docker compose up -d db` then export
+#   DATABASE_URL=postgresql+psycopg2://digikey:digikey@localhost:5432/digikey
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: digikey
+      POSTGRES_PASSWORD: digikey
+      POSTGRES_DB: digikey
+    ports:
+      - "5432:5432"
+    volumes:
+      - digikey_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U digikey"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  digikey_pgdata:

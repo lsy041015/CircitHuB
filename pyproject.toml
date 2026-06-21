@@ -1,0 +1,63 @@
+[project]
+name = "digikey-scraper"
+version = "0.1.0"
+description = "PySide6 desktop app for searching DigiKey parts with datasheet CV/AI tooling"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["__pycache__", ".venv"]
+
+[tool.ruff.lint]
+# Conservative P0 ruleset; expands in later phases.
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501",  # line length handled by formatter, not enforced hard in P0
+    "B008",  # function call in default arg (Qt patterns)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+# P0: strict typing enforced on the new layered packages only. Legacy GUI/CV
+# modules are excluded to isolate technical debt; coverage expands per roadmap.
+files = [
+    "digikey_scraper/domain",
+    "digikey_scraper/application",
+    "digikey_scraper/container.py",
+]
+
+[[tool.mypy.overrides]]
+module = "digikey_scraper.domain.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true
+
+[[tool.mypy.overrides]]
+module = "digikey_scraper.application.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+# Coverage gate targets the layered packages P0 introduces/owns (currently ~91%).
+# Legacy GUI/CV modules are tracked but not gated yet; their coverage is raised
+# in later phases (see roadmap). This mirrors the mypy "new layers strict" policy.
+[tool.coverage.run]
+source = [
+    "digikey_scraper/domain",
+    "digikey_scraper/application",
+    "digikey_scraper/infrastructure",
+    "digikey_scraper/container.py",
+    "digikey_scraper/workers.py",
+]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
