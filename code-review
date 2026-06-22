@@ -1,0 +1,483 @@
+================================================================================
+  DigiKey Scraper 프로젝트 - 기술 코드리뷰 보고서
+  작성일: 2026-06-22
+  검토 범위: 웹 스크래핑, Python GUI, 서버/클라이언트 통신, OpenCV
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. 웹 스크래핑 (Web Scraping)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 기술 스택 및 전체 흐름
+  - Selenium WebDriver (Chrome) + undetected_chromedriver + BeautifulSoup4
+  - 스크래퍼 계층: SeleniumDigiKeyScraper → ResilientSupplier → (CachingSupplier)
+  - 드라이버 생성: driver.py::create_driver()
+  - HTML 파싱: scraper.py::fetch_one_product()
+
+■ driver.py - Chrome WebDriver 생성 및 봇 탐지 우회
+
+[코드 분석]
+  create_driver(headless: bool) 함수는 두 단계 폴백 전략을 사용한다:
+
+  1단계: undetected_chromedriver(uc) 사용 시도
+    - uc.Chrome은 Selenium automation 특성을 제거한 패치된 드라이버
+    - 실패 시 표준 selenium.webdriver.Chrome으로 폴백
+
+  2단계: 표준 Selenium 사용 시 수동 스텔스 설정 적용
+    - CDP 명령으로 navigator.webdriver 속성 삭제:
+      driver.execute_cdp_cmd(
+          "Page.addScriptToEvaluateOnNewDocument",
+          {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"},
+      )
+    - excludeSwitches: ["enable-automation"] 설정
+    - useAutomationExtension: False 설정
+    - 실제 Chrome User-Agent 문자열 주입
+
+  headless 모드 처리 전략:
+    - pyvirtualdisplay (Xvfb) 가용 시: 가상 디스플레이를 생성하고
+      Chrome은 visible 모드로 실행 (--headless 미사용)
+      → 완전한 headless보다 탐지 우회율이 높음
+    - pyvirtualdisplay 불가 시: --headless=new 인수 사용
+    - 기존 Chrome 프로파일 재사용 시: 창을 화면 밖으로 이동
+      (--window-position=-32000,-32000) → 세션 쿠키 유지하면서 스텔스 유지
+
+  Chrome 프로파일 설정:
+    - 환경변수 DIGIKEY_CHROME_USER_DATA_DIR / DIGIKEY_CHROME_PROFILE_DIRECTORY
+    - 기본값: ~/.local/share/digikey-scraper/chrome-profile
+    - 프로파일 사용 시 로그인 세션 쿠키 재활용 → 봇 차단 우회 핵심
+
+  이미지 로딩 비활성화:
+    "profile.default_content_setting_values.images": 2
+    → 불필요한 이미지 로딩 차단, 스크래핑 속도 향상
+
+[리뷰 의견]
+  [장점]
+    - 폴백 전략이 견고함 (uc 실패 → 표준 selenium)
+    - 가상 디스플레이 우선 사용으로 탐지 우회율 향상
+    - snap chromium 환경 대응 (_system_chromedriver_is_snap 검사)
+    - Selenium Manager 캐시 chromedriver 자동 탐색
+
+  [개선 필요]
+    - create_driver의 반환 타입이 주석으로만 표기됨 (#  returns uc.Chrome)
+      → 실제 타입 힌트 부재: def create_driver(headless: bool) -> webdriver.Chrome
+    - _patch_quit_for_display에서 클로저가 외부 변수 _orig를 캡처하는데
+      uc 드라이버와 표준 드라이버 모두에서 quit() 재정의하는 구조 혼재
+    - subprocess로 Chrome 버전 확인 시 예외를 전부 무시(except Exception: pass)
+      → 실패 원인 로깅 부재
+
+■ scraper.py - HTML 파싱 및 제품 정보 추출
+
+[코드 분석]
+  fetch_one_product(driver, query, timeout) 전체 흐름:
+    1. SEARCH_URL.format(query=quote(query)) → 검색 페이지 이동
+    2. choose_product_url_or_candidates() → 단일/복수 결과 분기
+       - 이미 detail URL이면 직접 사용
+       - 정확히 일치하는 제품 1개 → 직접 접근
+       - 복수 후보 → fetch_candidate_details()로 전체 수집
+    3. fetch_product_detail() → 상세 페이지 파싱
+
+  차단 탐지 (is_blocked_search_page):
+    SEARCH_BLOCKED_PATTERNS = (
+        "access denied", "captcha", "verify you are human",
+        "cloudflare", "보안 확인", "ray id", ...
+    )
+    title == "just a moment..." 또한 Cloudflare 차단 신호로 처리
+
+  제품 링크 추출 (extract_product_links_from_soup):
+    - CSS 셀렉터 7종 배열로 다중 선택 전략:
+      "a[href*='/products/detail/']", "a[data-testid*='product'][href]" 등
+    - 부모 <tr> 혹은 <article>/<li>/<div>에서 설명 텍스트 추출
+    - URL 중복 제거 (seen_urls set)
+
+  가격 파싱 (extract_price_rows):
+    - <table> 내 price/quantity/pricing 헤더 탐색
+    - 1열이 숫자(수량)이고 PRICE_PATTERN 매칭인 행만 추출
+    - 테이블 파싱 실패 시 전체 텍스트 라인 fallback:
+      re.match(r"^\d[\d,]*\s*\|\s*[$₩€£]", text)
+
+[리뷰 의견]
+  [장점]
+    - 다중 CSS 셀렉터 전략으로 DigiKey 페이지 구조 변경에 강인함
+    - 차단/결과없음/구조변경을 별도 에러 메시지로 분류
+    - 가격 파싱에 테이블 → 텍스트 이중 폴백 구조
+
+  [개선 필요]
+    - wait_for_detail_page()에서 람다 파라미터명이 item → 관용적으로 d (driver) 권장
+    - extract_price_rows에서 dict.fromkeys(rows) 사용은 올바른 패턴이지만
+      의도 설명 주석 없어 가독성 저하
+    - candidate_matches_query에서 normalize_part 구현이 _scraper_specs에 있어
+      추적이 필요한 간접 의존성
+
+■ ResilientSupplier (resilient.py) - 지수 백오프 재시도
+
+[코드 분석]
+  지수 백오프: delay = min(max_delay, base_delay * 2^attempt)
+  - 기본값: retries=2, base_delay=0.5s, max_delay=8.0s
+  - 0회: 즉시, 1회: 0.5s, 2회: 1.0s 대기
+  - ScrapeBlocked는 재시도 없이 즉시 상위 전파 (자동화 차단은 재시도 무의미)
+  - should_cancel 콜백으로 Qt 취소 이벤트와 연동 가능
+
+[리뷰 의견]
+  [장점]
+    - 취소 가능성(should_cancel)을 주입 가능하여 테스트 용이
+    - sleep 함수 DI로 단위 테스트에서 실제 대기 없이 검증 가능
+    - ScrapeBlocked와 일반 예외를 명시적으로 분리
+
+  [개선 필요]
+    - attempt 카운터가 while True 루프 안에서 수동 증가됨
+      → for attempt in range(self.retries + 1) 구조가 더 명확함
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. Python GUI (PySide6 / Qt)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 기술 스택 및 전체 구조
+  - PySide6 (Qt6 Python 바인딩)
+  - MainWindow (_main_window.py): 메인 애플리케이션 창
+  - DatasheetViewer (datasheet_viewer.py): PDF 뷰어 다이얼로그
+  - QThread 기반 비동기 처리: _PdfLoader, _GemmaRegionWorker
+
+■ DatasheetViewer (datasheet_viewer.py) - PDF 뷰어
+
+[코드 분석]
+  비동기 PDF 로딩:
+    _PdfLoader(QThread)가 백그라운드에서 PDF 다운로드 및 검증을 수행.
+    Qt Signal로 결과를 메인 스레드에 전달:
+
+    pdf_ready = Signal(bytes, int, str)   # 데이터, 페이지수, 메타데이터
+    progress  = Signal(int, int)          # 수신바이트, 전체바이트
+    error     = Signal(str)               # 에러 메시지
+
+    청크 다운로드 구조:
+      while True:
+          if self._cancelled:
+              return
+          chunk = resp.read(128 * 1024)
+          ...
+          self.progress.emit(received, total)
+
+    → 128KB 청크 단위로 읽으며 취소 확인. 100MB 크기 제한 적용.
+    → b"%PDF" in data[:1024] 로 실제 PDF 여부 검증
+
+  영역 선택 인터랙션:
+    _on_image_pressed / _on_image_dragged / _on_image_released 3개 핸들러로
+    마우스 드래그 선택 구현.
+
+    좌표 변환 (_image_event_point):
+      scale = self._last_display_scale
+      x = int(event.pos().x() / scale)   # 화면 좌표 → 원본 이미지 좌표
+      y = int(event.pos().y() / scale)
+
+    드래그 중 실시간 프리뷰:
+      base = self._drag_base_pixmap  # 드래그 시작 시 스냅샷
+      preview = base.copy()
+      painter = QPainter(preview)
+      painter.setPen(QPen(QColor(255, 180, 0), 2))
+      painter.drawRect(...)             # 매 mouseMoveEvent마다 재그림
+      self._img_lbl.setPixmap(preview)
+
+  페이지 캐싱:
+    _render_page(index)에서 _raw_page_index와 현재 인덱스를 비교하여
+    동일 페이지 재렌더링 방지. 단순 1-slot 캐시로 페이지 이동 시 무효화.
+
+  스레드 종료 처리 (closeEvent):
+    loader.cancel()      # _cancelled = True 설정
+    loader.wait(3000)    # 3초 대기 후 강제 종료
+    self._close_document()
+    self.deleteLater()   # Qt 메모리 관리
+
+[리뷰 의견]
+  [장점]
+    - QThread + Signal/Slot으로 GUI 블로킹 없는 비동기 처리
+    - 드래그 중 base pixmap 스냅샷으로 효율적 프리뷰 (전체 재렌더 없음)
+    - closeEvent에서 스레드 안전하게 종료
+    - PDF 다운로드 전 Content-Length 체크로 과도한 메모리 사용 방지
+
+  [개선 필요]
+    - _PdfLoader.run()에서 urllib.request.urlopen은 SSL 인증서 검증을 수행하지만
+      사용자 지정 CAStore 설정이 없어 일부 데이터시트 HTTPS 서버에서 실패 가능
+    - 페이지 캐시가 1 슬롯 → 이전 페이지로 돌아올 때마다 재렌더링 발생.
+      LRU 2~3 슬롯 캐시로 개선 가능
+    - _stop_worker에서 worker.requestInterruption() 호출하지만
+      _GemmaRegionWorker.run()에서 isInterruptionRequested() 확인 없음
+      → 실제 인터럽션이 작동하지 않음
+    - 생성자에서 fitz, cv2, np를 모두 None으로 처리하는 방어 코드가 있으나
+      _render_page, _ocr_region_text 등에서 None 체크 없이 사용
+      → import 실패 시 AttributeError 발생 가능
+
+■ SearchService (application/search_service.py) - 헤드리스 검색 오케스트레이션
+
+[코드 분석]
+  SearchService.run()은 Qt와 완전히 분리된 순수 Python 검색 루프:
+
+    for index, query in enumerate(queries, start=1):
+        if cancel_event.is_set():
+            cancelled = True; break
+        sink.on_progress(index, total, query)
+        try:
+            result = self.scraper.fetch_one(query, timeout)
+        except ScrapeTimeout:
+            result = ProductResult(query=query, error=_timeout_message(...))
+        except ScrapeBlocked as exc:
+            result = ProductResult(query=query, error=_blocked_message(...))
+        except Exception as exc:
+            result = ProductResult(query=query, error=_error_message(...))
+        results.append(result)
+
+  NullProgressSink: 테스트용 no-op 싱크. 결과를 self.results에 누적.
+  Qt 환경에서는 Signal-backed 싱크가 주입됨.
+
+[리뷰 의견]
+  [장점]
+    - GUI 없이 단독 실행/테스트 가능한 헥사고날 아키텍처 구현
+    - cancel_event (threading.Event)로 스레드 간 취소 신호 전달
+    - 에러가 발생해도 해당 쿼리만 실패로 처리하고 나머지 계속 진행
+
+  [개선 필요]
+    - show_browser 파라미터가 sink.on_finished()에 전달되지만
+      SearchService 자체는 브라우저 표시 여부를 결정하지 않음
+      → 책임 분리 위반 (이 파라미터는 scraper 생성 시 결정되어야 함)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. 서버/클라이언트 통신
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 기술 스택 및 통신 구조
+  - DigiKey 스크래핑: Selenium (HTTP over Chrome WebDriver)
+  - PDF 다운로드: urllib.request (표준 라이브러리)
+  - Gemini API: google-genai SDK (REST/gRPC)
+  - AI 채팅: Ollama (로컬 LLM) + 선택적 Gemini 클라우드
+
+■ PDF 다운로드 (_PdfLoader)
+
+[코드 분석]
+  urllib.request.Request 직접 사용으로 브라우저 헤더 위장:
+
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/pdf,*/*"
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        ...
+
+  TI (Texas Instruments) URL 처리:
+    ti.com의 경우 gotoUrl 쿼리 파라미터로 실제 PDF URL이 인코딩됨:
+    https://www.ti.com/lit/...?gotoUrl=https%3A%2F%2F...pdf
+    → _request_url()에서 parse_qs + unquote로 실제 URL 추출
+
+[리뷰 의견]
+  [장점]
+    - 100MB 이중 체크 (Content-Length 헤더 + 실제 수신 크기)
+    - 청크 다운로드로 대용량 PDF 메모리 효율적 처리
+    - TI 특수 URL 패턴 처리
+
+  [개선 필요]
+    - timeout=30 하드코딩 → 사용자가 느린 네트워크에서 조정 불가
+    - HTTP 리다이렉트 횟수 제한 없음 (urlopen 기본 무제한)
+    - "Mozilla/5.0" 너무 짧은 User-Agent → 일부 서버에서 거부될 수 있음
+
+■ Gemini API 클라이언트 (gemma_client.py)
+
+[코드 분석]
+  GemmaDatasheetAnalyzer: Gemini API 래퍼 클래스.
+
+  API 키 관리 (다중 소스 우선순위):
+    1. 환경변수 GEMINI_API_KEYS (복수)
+    2. 환경변수 GEMINI_API_KEY (단수)
+    3. config/settings.env 파일
+    4. config/api_keys/gemini_api_keys.txt
+    5. GEMMA_CONFIG_ROOT 환경변수로 지정한 별도 경로
+
+  다중 키 라운드로빈 + 차단 처리:
+    self._keys: list[str]             # API 키 목록
+    self._rr: int                     # 라운드로빈 인덱스
+    self._blocked_until: list[float]  # 키별 차단 해제 시각 (Unix timestamp)
+
+  멀티모달 요청 구성:
+    parts = [types.Part(text=prompt)]
+    if image_png:
+        parts.append(types.Part.from_bytes(data=image_png, mime_type="image/png"))
+    → 텍스트 + 이미지를 함께 전송하여 표/차트 분석 품질 향상
+
+  응답 캐싱:
+    캐시 힌트(cache_hint)와 입력 해시 조합으로 로컬 디스크 캐시:
+    ~/.local/share/digikey-scraper/.gemma_cache/<hash>.json
+
+  프롬프트 전략 (translate_region_to_korean):
+    - 부품 번호, 핀 이름, 레지스터 이름, 기호, 수식, 단위를 원본 유지 요청
+    - 자연스러운 한국어 번역 지시
+    - 이미지 첨부 시 시각 정보 추가 활용
+
+[리뷰 의견]
+  [장점]
+    - 다중 API 키 + 라운드로빈으로 Rate Limit 분산
+    - 키별 차단 시각 추적으로 일시적 429 에러 대응
+    - 디스크 캐시로 동일 요청 반복 비용 절감
+    - 멀티모달 입력으로 텍스트 추출 불가 이미지 영역도 처리
+
+  [개선 필요]
+    - 캐시 무효화 전략 부재 → 모델 업그레이드 시 구 응답이 캐시에서 반환될 수 있음
+      → 캐시 키에 모델명 포함 필요 (현재 cache_hint 문자열만 사용)
+    - API 키가 txt 파일에 평문 저장됨
+      → 환경변수 또는 OS keyring 사용 권장
+    - google-genai import 실패 시 Exception을 잡음
+      → ImportError 한정으로 처리해야 다른 오류와 구분 가능
+    - analyze_region과 translate_region_to_korean에서 동일한
+      google.genai import 블록이 중복 → 공통 헬퍼로 추출 필요
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. OpenCV 활용
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 기술 스택 및 사용 목적
+  - OpenCV (cv2): PDF 페이지 렌더링 결과 처리 및 OCR 전처리
+  - PyMuPDF (fitz): PDF → 픽셀 데이터 렌더링 (72→150 DPI 업스케일)
+  - NumPy (np): 이미지 배열 처리
+  - pytesseract: OCR 엔진 (선택적 의존성)
+
+■ PDF 페이지 렌더링 파이프라인
+
+[코드 분석]
+  fitz → NumPy 배열 변환 (infrastructure/cv/image_ops.py):
+    _samples_to_bgr(samples, height, width, channels)
+    → PyMuPDF의 pix.samples (bytes)를 OpenCV BGR ndarray로 변환
+
+  페이지 렌더링 (_render_page):
+    scale = self._dpi / 72.0   # DPI 150 → scale = 2.083
+    pix = doc.load_page(index).get_pixmap(
+        matrix=fitz.Matrix(scale, scale), alpha=False
+    )
+    self._raw_page = _samples_to_bgr(pix.samples, pix.height, pix.width, pix.n)
+
+  표시용 리사이징 (_refresh_image):
+    zoom 수준에 따라 보간법 선택:
+    interp = cv2.INTER_LANCZOS4 if scale > 1.0 else cv2.INTER_AREA
+    composed = cv2.resize(composed, (new_w, new_h), interpolation=interp)
+    → 확대 시 Lanczos4 (고품질), 축소 시 INTER_AREA (앨리어싱 최소화)
+
+  선택 영역 시각화:
+    cv2.rectangle(composed, (x, y), (x + w, y + h), (255, 180, 0), 5)
+    → BGR 색상 (255, 180, 0) = 주황색 박스, 두께 5픽셀
+
+  BGR → QPixmap 변환 (_bgr_to_qpixmap):
+    rgb = np.ascontiguousarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
+    h, w, _ch = rgb.shape
+    qimg = QImage(rgb.data, w, h, rgb.strides[0], QImage.Format_RGB888)
+    return QPixmap.fromImage(qimg.copy())
+
+    ※ qimg.copy()가 중요: QImage가 numpy 배열의 raw pointer를 참조하므로
+       copy() 없으면 numpy 배열 GC 후 dangling pointer 발생 → 정확한 방어
+
+■ OCR 전처리 파이프라인
+
+[코드 분석]
+  _ocr_region_text(region) 처리 순서:
+    1. 영역 크롭: raw[y:y+h, x:x+w]  (NumPy 슬라이싱)
+    2. 그레이스케일 변환:
+       gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    3. 2배 업샘플링 (OCR 정확도 향상):
+       gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+    4. Otsu 이진화:
+       gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+    5. pytesseract OCR:
+       return pytesseract.image_to_string(gray, lang="eng").strip()
+
+  OCR 우선순위:
+    _run_region_action에서 PDF 텍스트 레이어 우선 추출:
+      text = self._extract_region_pdf_text(region)
+      if not text.strip():
+          text = self._ocr_region_text(region)   # 텍스트 레이어 없을 때만
+
+    → 벡터 PDF는 fitz로 정확한 텍스트 추출, 스캔 PDF는 OCR 폴백
+
+  PDF 텍스트 좌표 추출 (_extract_region_pdf_text):
+    words = self._document().load_page(index).get_text("words")
+    → 각 단어의 (x0, y0, x1, y1, text, block_no, line_no, word_no) 반환
+
+    선택 영역과 교차하는 단어만 필터링:
+      rect = fitz.Rect(x/scale, y/scale, (x+w)/scale, (y+h)/scale)
+      if word_rect.intersects(rect):
+          rows.append((word_rect.y0, word_rect.x0, word[4]))
+
+    행 재구성:
+      line_height = np.median([y 간격 목록])
+      → 중앙값으로 행 높이 추정, y 좌표 차이가 line_height * 0.6 이내면 같은 행
+      → x 좌표 순으로 정렬 후 공백으로 연결
+
+  이미지 PNG 인코딩 (_encode_region_png):
+    ok, encoded = cv2.imencode(".png", crop)
+    return encoded.tobytes() if ok else None
+    → Gemini API에 전송할 PNG 바이트 생성
+
+[리뷰 의견]
+  [장점]
+    - Lanczos4/INTER_AREA 보간법 선택으로 확대/축소 품질 최적화
+    - qimg.copy()로 NumPy 배열 참조 해제 문제 올바르게 방어
+    - OCR 전처리: 2배 업샘플링 + Otsu 이진화 조합이 데이터시트 텍스트에 효과적
+    - PDF 텍스트 레이어 우선, OCR 폴백 전략이 정확도와 성능 모두 잡음
+    - 행 재구성 시 np.median으로 가변적인 글자 크기에 적응
+
+  [개선 필요]
+    - cv2, fitz, np를 모듈 수준에서 try/except로 None 할당하지만
+      DatasheetViewer 메서드들에서 None 체크 없이 사용
+      → AttributeError: 'NoneType' object has no attribute ... 발생 가능
+      → 각 메서드 진입부에 if cv2 is None: raise RuntimeError(...) 가드 추가 필요
+
+    - _ocr_region_text에서 cv2.THRESH_BINARY | cv2.THRESH_OTSU 이진화는
+      균일한 배경에 유효하지만 그라데이션 배경 데이터시트에서 정확도 저하 가능.
+      적응형 이진화 대안:
+        gray = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, 11, 2
+        )
+
+    - _crop_region_bgr에서 경계 클램핑은 올바르게 처리되나
+      _on_image_released의 최소 크기 20x20 검사가 유일한 방어선
+      → _crop_region_bgr 자체적으로도 최소 크기 보호 필요
+
+    - _extract_region_pdf_text에서 rows가 1개일 때
+      [abs(rows[i][0] - rows[i-1][0]) for i in range(1, 1)] → 빈 리스트
+      → or [8.0] 기본값 처리가 되어 있어 올바르게 동작하지만
+         의도 설명 주석 부재로 가독성 저하
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. 종합 평가 및 우선순위별 개선 사항
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 아키텍처 강점
+  - 헥사고날 아키텍처(포트-어댑터) 적용으로 GUI/스크래퍼/AI가 완전 분리
+  - QThread + Signal/Slot으로 비동기 처리 구조 일관성 유지
+  - 의존성 주입으로 테스트 가능성 확보 (NullProgressSink, sleep DI)
+  - 다중 환경 대응 (headless/GUI, snap/일반 Chrome, DB/JSON 퍼시스턴스)
+  - 봇 탐지 우회 다층 전략 (uc → CDPcmd → virtual display → profile 재사용)
+
+■ 우선순위 HIGH 
+  1. _GemmaRegionWorker: requestInterruption() 호출에 대응하는
+     isInterruptionRequested() 확인 루프 추가
+  2. DatasheetViewer: cv2/fitz/np가 None일 때 메서드 진입 전 RuntimeError 가드 추가
+  3. create_driver 반환 타입 힌트 추가 (-> webdriver.Chrome)
+  4. google-genai ImportError를 Exception 대신 ImportError로 한정
+
+■ 우선순위 MEDIUM 
+  5. PDF 다운로드 timeout 파라미터화 (현재 30초 하드코딩)
+  6. OCR 전처리에 adaptiveThreshold 옵션 추가 (Otsu 폴백 유지)
+  7. 페이지 렌더링 캐시 슬롯을 2~3개로 확장 (LRU)
+  8. Gemini 응답 캐시 키에 모델명 포함 (캐시 무효화 전략)
+
+■ 우선순위 LOW
+  9.  ResilientSupplier의 while True + 수동 attempt++
+      → for attempt in range(retries + 1) 구조로 리팩터링
+  10. show_browser 파라미터를 SearchService.run()에서 분리
+  11. subprocess Chrome 버전 확인 실패 시 로깅 추가
+  12. analyze_region / translate_region_to_korean의 중복 import 블록 공통 헬퍼 추출
+
+================================================================================
+  문서 끝
+================================================================================
