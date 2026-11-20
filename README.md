@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/circithub-banner.png" alt="CircitHuB — 부품 검색, 데이터시트, 로컬 AI, LAN 협업을 한 앱에서" width="100%">
+  <img src="assets/circithub-banner.png" alt="CircitHuB — 부품 검색, 데이터시트, 로컬 AI, LAN 협업을 한 앱에서" width="560">
 </p>
 
 <p align="center"><b>한국어</b> · <a href="README.en.md">English</a></p>
